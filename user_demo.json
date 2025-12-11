@@ -1,0 +1,13 @@
+{
+  "firma": "Meister Eder Schreinerei",
+  "inhaber": "Franz Eder",
+  "stundensatz": 65.00,
+  "material_aufschlag": 1.15,
+  "mwst": 19,
+  "leistungen": [
+    {"id": "L01", "name": "Anfahrt pauschal", "preis": 35.00, "einheit": "Stk"},
+    {"id": "L02", "name": "Montagearbeiten", "preis": 65.00, "einheit": "Std"},
+    {"id": "L03", "name": "Lackieren (Weißlack)", "preis": 22.50, "einheit": "qm"},
+    {"id": "L04", "name": "Entsorgung Altmaterial", "preis": 45.00, "einheit": "pauschal"}
+  ]
+}
