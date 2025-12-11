@@ -12,131 +12,125 @@ try:
         api_key = st.secrets["GOOGLE_API_KEY"]
         genai.configure(api_key=api_key)
     else:
-        st.error("Kein API Key in den Streamlit Secrets gefunden!")
+        st.error("Kein API Key gefunden.")
         st.stop()
 except Exception as e:
-    st.error(f"Fehler bei der API Konfiguration: {e}")
+    st.error(f"Fehler: {e}")
     st.stop()
 
-# --- MODELL AUSWAHL (HIER WAR DER FEHLER) ---
-# Wir nutzen jetzt das Modell, das bei dir laut Diagnose funktioniert:
+# MODELL: Wir bleiben beim schnellen Flash 2.0
 MODEL_NAME = "gemini-2.0-flash" 
 
-# --- HILFSFUNKTIONEN ---
-
+# --- HILFSFUNKTIONEN (User Daten laden) ---
 def load_user_data(username):
-    """Lädt die Preisliste des Handwerkers aus einer JSON-Datei."""
     filename = f"user_{username}.json"
-    
-    # Für den ersten Start: Wenn die Datei nicht existiert, erstellen wir eine Demo-Datei
     if not os.path.exists(filename):
         demo_data = {
             "firma": "Musterhandwerk GmbH",
             "stundensatz": 65.00,
             "materialaufschlag_prozent": 15,
             "leistungen": {
-                "anfahrt_pauschale": 25.00,
-                "streichen_qm": 12.50,
-                "boden_verlegen_qm": 35.00,
-                "steckdose_montieren": 15.00
+                "anfahrt": 25.00,
+                "meisterstunde": 65.00,
+                "gesellenstunde": 50.00,
+                "material_pauschal": 10.00
             }
         }
         with open(filename, "w", encoding="utf-8") as f:
             json.dump(demo_data, f, indent=4)
-        return demo_data, True # True bedeutet: Datei wurde neu erstellt
-
+        return demo_data
     try:
         with open(filename, "r", encoding="utf-8") as f:
-            return json.load(f), False
-    except Exception as e:
-        st.error(f"Fehler beim Laden der Datei {filename}: {e}")
-        return None, False
+            return json.load(f)
+    except:
+        return None
 
 def get_gemini_response(prompt_parts):
-    """Sendet Daten an Gemini 2.0 Flash"""
     model = genai.GenerativeModel(MODEL_NAME)
     response = model.generate_content(prompt_parts)
     return response.text
 
-# --- APP START ---
+# --- APP OBERFLÄCHE ---
 
-st.title("🔨 AngebotFix")
-st.subheader("Automatischer Angebots-Generator für Handwerker")
+st.title("🔨 AngebotFix Direkt")
 
-# 1. Login (Simuliert über Dateinamen)
-username = st.text_input("Benutzername (z.B. 'schmidt' oder 'demo')", value="demo")
+# Login Simulation
+username = st.sidebar.text_input("Benutzer", value="demo")
+user_data = load_user_data(username)
 
-if username:
-    user_data, neu_erstellt = load_user_data(username)
+if user_data:
+    st.sidebar.success(f"Firma: {user_data.get('firma')}")
+    # Preisliste in der Sidebar anzeigen (zur Kontrolle)
+    with st.sidebar.expander("Preisliste"):
+        st.json(user_data)
+else:
+    st.warning("Konnte Profildaten nicht laden.")
+    st.stop()
+
+st.write("### 1. Erfassung vor Ort")
+st.info("Nimm die Baustelle auf: Sprich ins Mikro oder mach ein Foto.")
+
+col1, col2 = st.columns(2)
+
+with col1:
+    st.write("**🎤 Sprachnotiz**")
+    # DAS IST NEU: Das native Mikrofon-Widget
+    audio_input = st.audio_input("Aufnahme starten")
+
+with col2:
+    st.write("**📸 Foto**")
+    # DAS IST NEU: Das native Kamera-Widget
+    camera_input = st.camera_input("Foto machen")
+
+st.write("### 2. Zusätzliche Notizen (Optional)")
+text_input = st.text_area("Tippen...", height=100, placeholder="Zusätzliche Infos hier tippen...")
+
+# --- GENERIERUNG ---
+if st.button("Angebot erstellen", type="primary"):
     
-    if neu_erstellt:
-        st.info(f"Willkommen! Eine neue Profildatei 'user_{username}.json' wurde für dich angelegt.")
-    
-    if user_data:
-        st.sidebar.success(f"Eingeloggt als: {user_data.get('firma', 'Unbekannt')}")
-        st.sidebar.write(f"Stundensatz: {user_data.get('stundensatz')} €")
-        
-        with st.expander("Aktuelle Preisliste ansehen"):
-            st.json(user_data)
+    if not audio_input and not camera_input and not text_input:
+        st.error("Bitte gib erst Input (Foto, Audio oder Text)!")
+    else:
+        with st.spinner("KI wertet Kamera und Audio aus..."):
+            
+            # Prompt vorbereiten
+            system_instruction = f"""
+            Du bist ein Handwerks-Meister. Erstelle ein Angebot basierend auf den Eingaben.
+            
+            NUTZE DIESE PREISLISTE:
+            {json.dumps(user_data, ensure_ascii=False)}
+            
+            REGELN:
+            1. Höre dir das Audio an (falls vorhanden) und schaue das Bild an (falls vorhanden).
+            2. Liste alle Arbeiten und Materialien auf.
+            3. Berechne die Preise EXAKT nach der Preisliste oben.
+            4. Wenn etwas fehlt, schätze fair und markiere es mit (*).
+            5. Erstelle eine saubere Tabelle und einen kurzen, höflichen Text an den Kunden.
+            """
 
-        st.divider()
+            parts = [system_instruction]
 
-        # 2. Eingabe der Projektdaten
-        st.write("### Projekt-Infos eingeben")
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            input_text = st.text_area("Notizen / Anweisungen", height=150, 
-                                    placeholder="Z.B.: Wohnzimmer streichen ca 40qm, 2 Steckdosen tauschen. Kunde Müller, Hauptstr. 1.")
-        
-        with col2:
-            input_image = st.file_uploader("Foto hochladen (optional)", type=["jpg", "png", "jpeg"])
-            # Audio Upload (Streamlit unterstützt Mikrofon-Aufnahme direkt oft nur via Plugin, 
-            # Upload ist stabiler für den Start)
-            input_audio = st.file_uploader("Sprachnotiz hochladen (optional)", type=["mp3", "wav", "m4a"])
+            # Audio hinzufügen (Gemini nimmt Bytes direkt)
+            if audio_input:
+                parts.append({"mime_type": "audio/wav", "data": audio_input.getvalue()})
+                parts.append("Hier ist die Sprachnotiz des Handwerkers.")
 
-        generate_btn = st.button("Angebot erstellen", type="primary")
+            # Bild hinzufügen
+            if camera_input:
+                parts.append({"mime_type": "image/jpeg", "data": camera_input.getvalue()})
+                parts.append("Hier ist das Foto der Baustelle.")
 
-        if generate_btn:
-            if not input_text and not input_image and not input_audio:
-                st.warning("Bitte gib mindestens Text, ein Bild oder Audio ein.")
-            else:
-                with st.spinner("KI berechnet Angebot basierend auf deinen Preisen..."):
-                    
-                    # Prompt zusammenbauen
-                    # Wir übergeben die JSON-Daten als Kontext an die KI
-                    system_instruction = f"""
-                    Du bist ein Assistent für Handwerker. Deine Aufgabe ist es, ein professionelles Angebot zu schreiben.
-                    Nutze DIESE Preisliste und Firmendaten für die Kalkulation (rechne exakt!):
-                    {json.dumps(user_data, ensure_ascii=False)}
+            # Text hinzufügen
+            if text_input:
+                parts.append(f"Zusätzliche Notizen: {text_input}")
 
-                    Anweisungen:
-                    1. Analysiere den Input (Text, Bild oder Audio).
-                    2. Identifiziere die Arbeitsleistungen und Materialien.
-                    3. Ordne sie den Preisen in der Preisliste zu. Wenn etwas nicht in der Liste steht, schätze einen realistischen Preis und markiere ihn mit (*).
-                    4. Erstelle eine tabellarische Auflistung mit Einzelpreisen und Gesamtpreis.
-                    5. Formuliere einen freundlichen Anschreibentext dazu.
-                    6. Gib das Ergebnis sauber formatiert aus.
-                    """
-
-                    # Liste der Inhalte für Gemini erstellen
-                    prompt_parts = [system_instruction]
-                    
-                    if input_text:
-                        prompt_parts.append(f"Hier sind die Notizen des Handwerkers: {input_text}")
-                    
-                    if input_image:
-                        prompt_parts.append(input_image) # Bilddaten direkt übergeben
-                        prompt_parts.append("Analysiere dieses Bild auf relevante Details für das Angebot.")
-                    
-                    if input_audio:
-                        prompt_parts.append(input_audio) # Audiodaten direkt übergeben
-                        prompt_parts.append("Höre dir diese Sprachnotiz an und extrahiere die Aufgaben.")
-
-                    try:
-                        # Anfrage senden
-                        result = get_gemini_response(prompt_parts)
-                        st.markdown("### Fertiger Entwurf:")
-                        st.markdown(result)
-                    except Exception as e:
-                        st.error(f"Ein Fehler ist aufgetreten: {e}")
+            try:
+                # Ab an die KI
+                result = get_gemini_response(parts)
+                
+                st.markdown("---")
+                st.subheader("📝 Entwurf")
+                st.markdown(result)
+                
+            except Exception as e:
+                st.error(f"Fehler bei der KI-Verarbeitung: {e}")
