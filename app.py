@@ -118,7 +118,9 @@ if st.button("Angebot erstellen", type="primary"):
             # Bild hinzufügen
             if camera_input:
                 parts.append({"mime_type": "image/jpeg", "data": camera_input.getvalue()})
-                parts.append("Hier ist das Foto der Baustelle.")
+                # ALTE ZEILE: parts.append("Hier ist das Foto der Baustelle.")
+                # NEUE, BESSERE ZEILE:
+                parts.append("Hier ist ein Foto. Das kann die Baustelle sein ODER ein Notizzettel. Lies unbedingt allen Text und alle Maße, die du auf dem Bild findest!")
 
             # Text hinzufügen
             if text_input:
