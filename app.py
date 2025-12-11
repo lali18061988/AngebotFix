@@ -18,8 +18,8 @@ except Exception as e:
     st.error(f"Fehler: {e}")
     st.stop()
 
-# MODELL: Wir bleiben beim schnellen Flash 2.0
-MODEL_NAME = "gemini-2.0-flash" 
+# MODELL: 
+MODEL_NAME = "gemini-2.0-flash"
 
 # --- HILFSFUNKTIONEN ---
 
