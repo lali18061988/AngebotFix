@@ -19,7 +19,7 @@ except Exception as e:
     st.stop()
 
 # MODELL: Stabil und günstig (1.5 Flash)
-MODEL_NAME = "gemini-1.5-flash-002" 
+MODEL_NAME = "gemini-2.0-flash-lite-preview-02-05" 
 
 # --- SESSION STATE INITIALISIEREN ---
 # Das hier sorgt dafür, dass die App nicht vergisst, wer eingeloggt ist
