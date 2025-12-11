@@ -21,7 +21,7 @@ except Exception as e:
 
 # MODELL: Wir gehen zurück zum STABILEN 1.5 Flash
 # Das hat hohe Limits (15 Anfragen pro Minute kostenlos)
-MODEL_NAME = "gemini-1.5-flash" 
+MODEL_NAME = "gemini-flash-latest" 
 
 # --- SESSION STATE ---
 if "logged_in" not in st.session_state:
