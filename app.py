@@ -2,7 +2,6 @@ import streamlit as st
 import google.generativeai as genai
 import json
 import os
-import time # Neu, falls wir kurz warten müssen
 
 # --- KONFIGURATION ---
 st.set_page_config(page_title="AngebotFix Pro", page_icon="🔨")
