@@ -2,6 +2,7 @@ import streamlit as st
 import google.generativeai as genai
 import json
 import os
+import time # Neu, falls wir kurz warten müssen
 
 # --- KONFIGURATION ---
 st.set_page_config(page_title="AngebotFix Pro", page_icon="🔨")
@@ -18,11 +19,11 @@ except Exception as e:
     st.error(f"Fehler: {e}")
     st.stop()
 
-# MODELL: Stabil und günstig (1.5 Flash)
-MODEL_NAME = "gemini-2.0-flash-lite-preview-02-05" 
+# MODELL: Wir gehen zurück zum STABILEN 1.5 Flash
+# Das hat hohe Limits (15 Anfragen pro Minute kostenlos)
+MODEL_NAME = "gemini-1.5-flash" 
 
-# --- SESSION STATE INITIALISIEREN ---
-# Das hier sorgt dafür, dass die App nicht vergisst, wer eingeloggt ist
+# --- SESSION STATE ---
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 if "user_data" not in st.session_state:
@@ -31,10 +32,8 @@ if "user_data" not in st.session_state:
 # --- FUNKTIONEN ---
 
 def check_login(username, password):
-    """Prüft, ob Datei existiert und Passwort stimmt."""
     filename = f"user_{username}.json"
     
-    # Spezialfall: Demo-User wird automatisch erstellt, falls nicht da
     if username == "demo" and not os.path.exists(filename):
         create_demo_user()
     
@@ -45,8 +44,6 @@ def check_login(username, password):
         with open(filename, "r", encoding="utf-8") as f:
             data = json.load(f)
             
-        # PASSWORT PRÜFUNG
-        # Wir schauen, ob das Passwort in der Datei mit der Eingabe übereinstimmt
         stored_password = data.get("passwort")
         if stored_password == password:
             return True, data
@@ -56,53 +53,50 @@ def check_login(username, password):
         return False, f"Fehler in der Datei: {e}"
 
 def create_demo_user():
-    """Erstellt eine Demo-Datei mit Passwort 'demo'"""
     demo_data = {
-        "passwort": "demo",  # DAS IST NEU
+        "passwort": "demo",
         "firma": "Musterhandwerk GmbH",
         "stundensatz": 65.00,
         "materialaufschlag_prozent": 15,
         "leistungen": {
             "wand_streichen_qm": 12.50,
-            "anfahrt": 25.00
+            "anfahrt_pauschal": 25.00,
+            "steckdose_wechseln": 15.00
         }
     }
     with open("user_demo.json", "w", encoding="utf-8") as f:
         json.dump(demo_data, f, indent=4)
 
 def get_gemini_response(prompt_parts):
+    # Wir erstellen das Modell hier frisch
     model = genai.GenerativeModel(MODEL_NAME)
     response = model.generate_content(prompt_parts)
     return response.text
 
-# --- APP STRUKTUR ---
+# --- APP ---
 
-# 1. LOGIN MASK (Wird angezeigt, wenn NICHT eingeloggt)
 if not st.session_state.logged_in:
     st.title("🔐 Login AngebotFix")
-    st.info("Bitte melde dich an, um auf deine Firmenpreise zuzugreifen.")
+    st.info("Bitte anmelden (Demo: demo / demo)")
     
     col1, col2 = st.columns(2)
     with col1:
         inp_user = st.text_input("Benutzername")
     with col2:
-        inp_pass = st.text_input("Passwort", type="password") # Versteckt die Eingabe
+        inp_pass = st.text_input("Passwort", type="password")
     
     if st.button("Anmelden"):
         success, result = check_login(inp_user, inp_pass)
         if success:
             st.session_state.logged_in = True
             st.session_state.user_data = result
-            st.rerun() # Seite neu laden, um direkt zur App zu springen
+            st.rerun()
         else:
             st.error(f"Login fehlgeschlagen: {result}")
 
-# 2. HAUPT-APP (Wird nur angezeigt, WENN eingeloggt)
 else:
-    # Daten aus dem Session State holen
     user_data = st.session_state.user_data
     
-    # Sidebar mit Logout
     st.sidebar.success(f"Firma: {user_data.get('firma')}")
     if st.sidebar.button("Abmelden"):
         st.session_state.logged_in = False
@@ -110,10 +104,10 @@ else:
         st.rerun()
 
     st.title("🔨 AngebotFix Pro")
-    st.write(f"Willkommen, **{user_data.get('firma')}**!")
-    st.info("Fülle mindestens EINES der Felder aus (Audio, Bild oder Text).")
+    st.write(f"Moin, **{user_data.get('firma')}**!")
+    st.info("Erfasse dein Angebot:")
 
-    # --- EINGABE-BEREICH ---
+    # --- EINGABE ---
     
     st.subheader("1. 🎤 Sprachnotiz")
     audio_input = st.audio_input("Aufnahme starten")
@@ -138,11 +132,11 @@ else:
                     (text_input.strip() != "")
         
         if not has_input:
-            st.error("⚠️ Bitte gib uns etwas Futter! Sprich etwas auf, mach ein Foto oder tippe Text.")
+            st.error("⚠️ Bitte gib Input: Audio, Foto oder Text.")
         else:
-            with st.spinner("KI kalkuliert mit deinen Preisen..."):
+            with st.spinner("KI kalkuliert..."):
                 
-                # Wir löschen das Passwort aus den Daten, bevor wir sie an die KI senden (Sicherheit)
+                # Passwort entfernen für Sicherheit
                 safe_user_data = user_data.copy()
                 if "passwort" in safe_user_data:
                     del safe_user_data["passwort"]
@@ -179,4 +173,6 @@ else:
                     st.markdown("### ✅ Fertiger Entwurf")
                     st.markdown(result)
                 except Exception as e:
-                    st.error(f"KI Fehler: {e}")
+                    # Fehlermeldung schöner formatieren
+                    st.error("Es gab ein Problem. Falls Fehler 404 kommt, wird die Bibliothek gerade aktualisiert.")
+                    st.code(str(e))
