@@ -12,7 +12,7 @@ try:
         api_key = st.secrets["GOOGLE_API_KEY"]
         genai.configure(api_key=api_key)
     else:
-        st.error("Kein API Key gefunden.")
+        st.error("Kein API Key gefunden. Bitte in den Secrets hinterlegen.")
         st.stop()
 except Exception as e:
     st.error(f"Fehler: {e}")
@@ -21,24 +21,31 @@ except Exception as e:
 # MODELL: Wir bleiben beim schnellen Flash 2.0
 MODEL_NAME = "gemini-2.0-flash" 
 
-# --- HILFSFUNKTIONEN (User Daten laden) ---
+# --- HILFSFUNKTIONEN ---
+
 def load_user_data(username):
+    """Lädt die individuelle Preisliste des Handwerkers."""
     filename = f"user_{username}.json"
+    
+    # Automatische Erstellung einer Demo-Datei, falls noch keine existiert
     if not os.path.exists(filename):
         demo_data = {
             "firma": "Musterhandwerk GmbH",
             "stundensatz": 65.00,
+            "anfahrt_pauschal": 25.00,
             "materialaufschlag_prozent": 15,
             "leistungen": {
-                "anfahrt": 25.00,
-                "meisterstunde": 65.00,
-                "gesellenstunde": 50.00,
-                "material_pauschal": 10.00
+                "wand_streichen_qm": 12.50,
+                "decke_streichen_qm": 14.00,
+                "boden_verlegen_qm": 35.00,
+                "steckdose_montieren_stk": 15.00,
+                "wc_becken_montage_pauschal": 120.00
             }
         }
         with open(filename, "w", encoding="utf-8") as f:
             json.dump(demo_data, f, indent=4)
         return demo_data
+
     try:
         with open(filename, "r", encoding="utf-8") as f:
             return json.load(f)
@@ -52,87 +59,103 @@ def get_gemini_response(prompt_parts):
 
 # --- APP OBERFLÄCHE ---
 
-st.title("🔨 AngebotFix Direkt")
+st.title("🔨 AngebotFix Pro")
 
-# Login Simulation
-username = st.sidebar.text_input("Benutzer", value="demo")
+# 1. Login Simulation (Lädt die JSON mit den Preisen)
+username = st.sidebar.text_input("Benutzer-Kürzel", value="demo")
 user_data = load_user_data(username)
 
 if user_data:
-    st.sidebar.success(f"Firma: {user_data.get('firma')}")
-    # Preisliste in der Sidebar anzeigen (zur Kontrolle)
-    with st.sidebar.expander("Preisliste"):
+    st.sidebar.success(f"Angemeldet: {user_data.get('firma')}")
+    st.sidebar.info("Preise werden aus deiner JSON-Datei geladen.")
+    with st.sidebar.expander("Deine Preisliste ansehen"):
         st.json(user_data)
 else:
     st.warning("Konnte Profildaten nicht laden.")
     st.stop()
 
-st.write("### 1. Erfassung vor Ort")
-st.info("Nimm die Baustelle auf: Sprich ins Mikro oder mach ein Foto.")
+st.divider()
+st.write("### 🆕 Neues Angebot erfassen")
+st.info("Fülle mindestens EINES der Felder aus (Audio, Bild oder Text).")
 
-col1, col2 = st.columns(2)
+# --- EINGABE-BEREICH ---
 
-with col1:
-    st.write("**🎤 Sprachnotiz**")
-    # DAS IST NEU: Das native Mikrofon-Widget
-    audio_input = st.audio_input("Aufnahme starten")
+# A) AUDIO
+st.subheader("1. 🎤 Sprachnotiz")
+audio_input = st.audio_input("Aufnahme starten")
 
-with col2:
-    st.write("**📸 Foto**")
-    # DAS IST NEU: Das native Kamera-Widget
+# B) BILD (Kamera ODER Upload)
+st.subheader("2. 📸 Bild / Notiz")
+tab1, tab2 = st.tabs(["Kamera nutzen", "Datei hochladen"])
+
+with tab1:
     camera_input = st.camera_input("Foto machen")
+with tab2:
+    upload_input = st.file_uploader("Bild hochladen (z.B. aus Galerie)", type=["jpg", "png", "jpeg"])
 
-st.write("### 2. Zusätzliche Notizen (Optional)")
-text_input = st.text_area("Tippen...", height=100, placeholder="Zusätzliche Infos hier tippen...")
+# C) TEXT
+st.subheader("3. 📝 Text / Hinweise")
+text_input = st.text_area("Tippen...", height=100, placeholder="Z.B. Kunde Maier, 3. Stock, Aufzug vorhanden...")
+
 
 # --- GENERIERUNG ---
-if st.button("Angebot erstellen", type="primary"):
+st.divider()
+if st.button("🚀 Angebot erstellen", type="primary"):
     
-    if not audio_input and not camera_input and not text_input:
-        st.error("Bitte gib erst Input (Foto, Audio oder Text)!")
+    # PRÜFUNG: Ist mindestens eine Info da?
+    has_input = (audio_input is not None) or \
+                (camera_input is not None) or \
+                (upload_input is not None) or \
+                (text_input.strip() != "")
+    
+    if not has_input:
+        st.error("⚠️ Bitte gib uns etwas Futter! Sprich etwas auf, mach ein Foto oder tippe Text.")
     else:
-        with st.spinner("KI wertet Kamera und Audio aus..."):
+        with st.spinner("KI analysiert deine Eingaben und kalkuliert Preise..."):
             
-            # Prompt vorbereiten
+            # 1. System-Prompt bauen (Die "Gehirn"-Anweisung)
             system_instruction = f"""
-            Du bist ein Handwerks-Meister. Erstelle ein Angebot basierend auf den Eingaben.
+            Du bist ein professioneller Handwerks-Meister. Erstelle ein Angebot basierend auf den Eingaben.
             
-            NUTZE DIESE PREISLISTE:
+            WICHTIG - NUTZE AUSSCHLIESSLICH DIESE PREISLISTE ZUR KALKULATION:
             {json.dumps(user_data, ensure_ascii=False)}
             
-            REGELN:
-            1. Höre dir das Audio an (falls vorhanden) und schaue das Bild an (falls vorhanden).
-            2. Liste alle Arbeiten und Materialien auf.
-            3. Berechne die Preise EXAKT nach der Preisliste oben.
-            4. Wenn etwas fehlt, schätze fair und markiere es mit (*).
-            5. Erstelle eine saubere Tabelle und einen kurzen, höflichen Text an den Kunden.
+            DEINE AUFGABE:
+            1. Analysiere ALLE Eingaben (Audio, Bilder, Text) gleichzeitig.
+               - Wenn ein Bild eine handgeschriebene Notiz ist: Lies die Maße und Aufgaben aus!
+               - Wenn ein Bild den Raum zeigt: Schätze grob, falls keine Maße genannt wurden.
+            2. Identifiziere die benötigten Leistungen aus der Preisliste.
+            3. Berechne die Summen (Menge x Einzelpreis).
+            4. Wenn eine Leistung NICHT in der Liste steht: Schätze einen marktüblichen Preis und markiere ihn deutlich mit (*).
+            5. Erstelle eine saubere Tabelle und einen freundlichen Angebotstext.
             """
 
             parts = [system_instruction]
 
-            # Audio hinzufügen (Gemini nimmt Bytes direkt)
+            # 2. Daten an die KI anhängen (nur was da ist)
+            
             if audio_input:
                 parts.append({"mime_type": "audio/wav", "data": audio_input.getvalue()})
-                parts.append("Hier ist die Sprachnotiz des Handwerkers.")
+                parts.append("Anweisung aus der Sprachnachricht:")
 
-            # Bild hinzufügen
             if camera_input:
                 parts.append({"mime_type": "image/jpeg", "data": camera_input.getvalue()})
-                # ALTE ZEILE: parts.append("Hier ist das Foto der Baustelle.")
-                # NEUE, BESSERE ZEILE:
-                parts.append("Hier ist ein Foto. Das kann die Baustelle sein ODER ein Notizzettel. Lies unbedingt allen Text und alle Maße, die du auf dem Bild findest!")
+                parts.append("Bild von der Kamera (beachte Notizen oder Raumsituation):")
 
-            # Text hinzufügen
+            if upload_input:
+                # Wir müssen den Mime-Type (jpg/png) erkennen
+                parts.append({"mime_type": upload_input.type, "data": upload_input.getvalue()})
+                parts.append("Hochgeladene Bild-Datei (beachte Notizen oder Raumsituation):")
+
             if text_input:
-                parts.append(f"Zusätzliche Notizen: {text_input}")
+                parts.append(f"Zusätzliche schriftliche Notizen: {text_input}")
 
             try:
-                # Ab an die KI
+                # 3. Abflug!
                 result = get_gemini_response(parts)
                 
-                st.markdown("---")
-                st.subheader("📝 Entwurf")
+                st.markdown("### ✅ Fertiger Entwurf")
                 st.markdown(result)
                 
             except Exception as e:
-                st.error(f"Fehler bei der KI-Verarbeitung: {e}")
+                st.error(f"Hoppla, da gab es einen Fehler bei der KI: {e}")
