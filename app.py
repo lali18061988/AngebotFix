@@ -77,7 +77,7 @@ if st.session_state['user_data']:
             with st.spinner("KI analysiert Preise, Foto und Sprache..."):
                 try:
                     # Input-Liste für die KI vorbereiten
-                    model = genai.GenerativeModel('gemini-1.5-flash-latest')
+                    model = genai.GenerativeModel('gemini-1.5-flash')
                     prompt_parts = []
                     
                     # 1. System-Anweisung & Preisliste
